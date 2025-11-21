@@ -553,7 +553,22 @@ pub async fn run_transaction_tracer(args: ForkTracerArgs) -> Result<()> {
                     .context("Failed to fetch block")?;
 
                 let (_, block): (u16, MintedBlock<'_>) =
-                    cbor::decode(&block_bytes).context("failed to decode block bytes")?;
+                    match cbor::decode(&block_bytes).context("failed to decode block bytes") {
+                        Ok(result) => result,
+                        Err(e) => {
+                            tracing::warn!(
+                            "failed to decode block bytes, dumping raw bytes and continuing: {e}"
+                        );
+                            if args.dump_blocks {
+                                dump_writer.write(
+                                    &format!("{}.{}", header.slot(), header.hash()),
+                                    hex::encode(block_bytes),
+                                );
+                            }
+
+                            continue;
+                        }
+                    };
 
                 let txs: Vec<Hash<32>> = block
                     .transaction_bodies
