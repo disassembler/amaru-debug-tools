@@ -3,20 +3,33 @@ use futures_util::future::join;
 use pallas_network::facades::PeerClient;
 use pallas_network::miniprotocols::chainsync::NextResponse;
 use pallas_network::miniprotocols::blockfetch::{Client as BlockfetchClient, Body};
+pub use pallas_crypto::{
+    hash::{Hash, Hasher},
+    key::ed25519,
+};
+
+use pallas_traverse::MultiEraHeader;
 use std::fmt::Debug;
 use tokio::time::sleep;
 use futures_executor::block_on;
 
 // --- Imports from amaru-network and amaru-kernel ---
 use amaru_kernel::{peer::Peer, Point};
+use amaru_kernel::PoolId;
 use amaru_network::chain_sync_client::{ChainSyncClient, to_traverse};
 use amaru_network::point::to_network_point;
 // ---------------------------------------------------
 
 use crate::data_types::HeaderInfo;
 use crate::cli::{SlotDivergenceArgs, ProtocolVersionArgs};
+use crate::cli::ForkTracerArgs;
 
 // --- Core Network Logic (Helper Functions) ---
+
+pub fn issuer_to_pool_id(issuer: &ed25519::PublicKey) -> PoolId {
+    // The pool ID is the blake2b-224 hash (28 bytes) of the cold verification key.
+    Hasher::<224>::hash(issuer.as_ref())
+}
 
 /// Attempts to get the next header from a ChainSync client.
 async fn fetch_next_header(
@@ -300,5 +313,78 @@ pub async fn run_protocol_version(args: ProtocolVersionArgs) -> Result<()> {
     tracing::info!("Successfully connected and completed handshake.");
     tracing::info!("Highest Protocol Version supported by {} is confirmed by successful Handshake.", host);
     tracing::info!("#####################################################");
+    Ok(())
+}
+
+pub async fn run_fork_tracer(args: ForkTracerArgs) -> Result<()> {
+    let start_hash = hex::decode(&args.hash).context("Failed to decode start block hash from hex string")?;
+    let start_point = Point::Specific(args.slot, start_hash);
+
+    tracing::info!("Starting fork trace on {} from Slot: {}", args.relay, args.slot);
+
+    // We only need the ChainSync client for traversal, but connect_and_intersect returns both.
+    let (mut chainsync, _blockfetch) = connect_and_intersect(
+        &args.relay,
+        args.magic,
+        start_point.clone(),
+    )
+    .await
+    .context("Failed to connect and intersect at fork point")?;
+
+    let mut blocks_found = 0;
+
+    tracing::info!("--- Tracing Divergent Chain ---");
+
+    loop {
+        // Request the next header
+        let response_result = chainsync.request_next().await;
+
+        let response = match response_result {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("ChainSync error during traversal: {}", e);
+                break;
+            }
+        };
+
+        match response {
+            NextResponse::RollForward(hd, _tip) => {
+                // Decode Header and Extract Pool ID
+                let header = to_traverse(&hd).context("Failed to decode header")?;
+
+                // Pool ID extraction: We use the `issuer_vkey()` field available
+                // in MultiEraHeader and hash it to get the unique pool identifier (Pool ID).
+                let pool_id_hex = header
+                    .issuer_vkey()
+                    .and_then(|vkey_bytes| {
+                        // FIX E0308: Convert &[u8] to ed25519::PublicKey before hashing
+                        ed25519::PublicKey::try_from(vkey_bytes)
+                            .ok()
+                            .map(|vkey| issuer_to_pool_id(&vkey))
+                            .map(|pool_id| hex::encode(pool_id))
+                    });
+
+                tracing::info!(
+                    "  [+] Block Slot: {} | Hash: {} | Pool ID: {:?}",
+                    header.slot(),
+                    hex::encode(header.hash()),
+                    pool_id_hex
+                );
+
+                blocks_found += 1;
+            }
+            NextResponse::RollBackward(point, tip) => {
+                // Possible if the network forces another rollback mid-traversal
+                tracing::warn!("Chain rolled back to point: {:?} (Tip: {:?})", point, tip);
+                // Continue the loop from the new point
+            }
+            NextResponse::Await => {
+                tracing::info!("--- Reached Tip ---");
+                tracing::info!("Traversal complete. Found {} blocks on the divergent chain.", blocks_found);
+                break;
+            }
+        }
+    }
+
     Ok(())
 }

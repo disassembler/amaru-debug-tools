@@ -37,6 +37,7 @@ dependencies = [
  "futures-executor",
  "futures-util",
  "hex",
+ "pallas-crypto",
  "pallas-network",
  "pallas-traverse",
  "tokio",

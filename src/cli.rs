@@ -22,6 +22,25 @@ pub struct NetworkCommand {
     pub command: NetworkSubcommand,
 }
 
+#[derive(Parser, Debug)]
+pub struct ForkTracerArgs {
+    /// Address and port of the target relay (e.g., node.example.com:3001).
+    #[arg(long)]
+    pub relay: String,
+
+    /// Absolute slot number where the divergence/fork starts.
+    #[arg(long)]
+    pub slot: u64,
+
+    /// Hash of the block at the starting slot (hex encoded).
+    #[arg(long)]
+    pub hash: String,
+
+    /// The network magic number (e.g., 2 for Preview).
+    #[arg(long, default_value_t = 764824073)]
+    pub magic: u64,
+}
+
 #[derive(Subcommand, Debug)]
 pub enum NetworkSubcommand {
     /// Synchronizes headers from two relays starting at a specific block and reports the first divergence point.
@@ -29,6 +48,7 @@ pub enum NetworkSubcommand {
 
     /// Queries a relay to determine the highest supported Ouroboros network protocol version.
     ProtocolVersion(ProtocolVersionArgs),
+    ForkTracer(ForkTracerArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -70,6 +90,7 @@ pub async fn run() -> Result<()> {
             // Updated to include the new command
             NetworkSubcommand::SlotDivergence(args) => cli_commands::run_slot_divergence(args).await,
             NetworkSubcommand::ProtocolVersion(args) => cli_commands::run_protocol_version(args).await,
+            NetworkSubcommand::ForkTracer(args) => cli_commands::run_fork_tracer(args).await,
         },
     }
 }
