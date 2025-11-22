@@ -7,3 +7,4 @@ backup.json
 *.mnemonic
 challenges.json
 /state*
+/output
