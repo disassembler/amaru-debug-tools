@@ -200,8 +200,6 @@ fn print_last_good_info(last_good: &Option<HeaderInfo>) {
 
 /// Main entry point for the slot-divergence command.
 pub async fn run_slot_divergence(args: SlotDivergenceArgs) -> Result<()> {
-    // Cardano Preview Testnet magic number
-    const MAGIC: u64 = 764824073;
 
     let start_hash =
         hex::decode(&args.hash).context("Failed to decode start block hash from hex string")?;
@@ -213,8 +211,8 @@ pub async fn run_slot_divergence(args: SlotDivergenceArgs) -> Result<()> {
 
     // --- Concurrent Connection and Intersection ---
     let (res_a, res_b) = join(
-        connect_and_intersect(&args.relay_a, MAGIC, start_point.clone()),
-        connect_and_intersect(&args.relay_b, MAGIC, start_point),
+        connect_and_intersect(&args.relay_a, args.magic, start_point.clone()),
+        connect_and_intersect(&args.relay_b, args.magic, start_point),
     )
     .await;
 

@@ -103,6 +103,9 @@ pub struct SlotDivergenceArgs {
     /// Hash of the block at the starting slot (hex encoded).
     #[arg(long)]
     pub hash: String,
+
+    #[arg(long, default_value_t = 764824073)]
+    pub magic: u64,
 }
 
 #[derive(Parser, Debug)]
