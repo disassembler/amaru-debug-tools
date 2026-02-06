@@ -126,6 +126,7 @@ fn print_divergence_info(
     host_b: &str,
     diverging_b: &HeaderInfo,
     block_b_res: &Result<Body>,
+    magic: u64,
 ) {
     if let Some(good) = last_good {
         tracing::error!("\n\n#####################################################");
@@ -137,7 +138,7 @@ fn print_divergence_info(
         let last_good_fetch_result = block_on(async {
             // Re-connect specifically for fetching the last good block
             let (mut _chainsync, mut blockfetch) =
-                connect_and_intersect(host_a, 764824073, good.point.clone()).await?;
+                connect_and_intersect(host_a, magic, good.point.clone()).await?;
             fetch_block_cbor(&mut blockfetch, good.point.clone(), host_a).await
         });
 
@@ -261,6 +262,7 @@ pub async fn run_slot_divergence(args: SlotDivergenceArgs) -> Result<()> {
                         &args.relay_b,
                         &b,
                         &block_b_res,
+                        args.magic,
                     );
                     break;
                 }
@@ -284,6 +286,7 @@ pub async fn run_slot_divergence(args: SlotDivergenceArgs) -> Result<()> {
                         &args.relay_b,
                         &b,
                         &block_b_res,
+                        args.magic,
                     );
                     break;
                 }
