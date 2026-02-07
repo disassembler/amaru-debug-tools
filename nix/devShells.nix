@@ -1,16 +1,22 @@
 {
-  perSystem = { config, pkgs, ... }: {
+  perSystem = { inputs', pkgs, ... }: let
+    # Use fenix for nightly toolchain with all components
+    toolchain = with inputs'.fenix.packages;
+      combine [
+        complete.rustc
+        complete.cargo
+        complete.rust-analyzer
+        complete.rustfmt
+        complete.clippy
+      ];
+  in {
     devShells.default = with pkgs; mkShell {
       packages = [
-        cargo
+        toolchain
         cmake
-        rust-bin.nightly.latest.default
         pkg-config
         openssl
         zlib
-        rust-analyzer
-        rustfmt
-        clippy
       ];
     };
   };
