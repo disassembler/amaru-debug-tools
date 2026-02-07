@@ -36,6 +36,7 @@
         maintainers = with lib.maintainers; [
           disassembler
           dermetfan
+          johnalotoski
         ];
         license = with lib.licenses; [
           asl20
