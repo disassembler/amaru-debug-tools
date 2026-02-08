@@ -5,6 +5,8 @@
       combine [
         minimal.rustc
         minimal.cargo
+        complete.clippy
+        complete.rustfmt
       ];
     craneLib = (inputs.crane.mkLib pkgs).overrideToolchain toolchain;
 
@@ -17,9 +19,14 @@
       ];
     };
 
+    # Extract pname and version from Cargo.toml
+    crateInfo = craneLib.crateNameFromCargoToml { cargoToml = ../Cargo.toml; };
+
     commonArgs = {
       inherit src;
+      inherit (crateInfo) pname version;
       strictDeps = true;
+      cargoExtraArgs = "--locked";
 
       buildInputs = with pkgs; [
         openssl
@@ -45,6 +52,7 @@
       };
     };
 
+    # Build dependencies separately for caching
     cargoArtifacts = craneLib.buildDepsOnly commonArgs;
   in {
     packages = {
@@ -65,10 +73,7 @@
         craneLibMusl = (inputs.crane.mkLib pkgs).overrideToolchain muslToolchain;
         muslPkgs = pkgs.pkgsCross.musl64;
 
-        muslArgs = {
-          inherit src;
-          strictDeps = true;
-
+        muslArgs = commonArgs // {
           depsBuildBuild = [
             muslPkgs.stdenv.cc
           ];
@@ -78,23 +83,16 @@
             zlib
           ];
 
-          nativeBuildInputs = with pkgs; [
-            pkg-config
-            cmake
-          ];
-
           CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
           OPENSSL_STATIC = "1";
           OPENSSL_LIB_DIR = "${muslPkgs.pkgsStatic.openssl.out}/lib";
           OPENSSL_INCLUDE_DIR = "${muslPkgs.pkgsStatic.openssl.dev}/include";
-
-          meta = commonArgs.meta;
         };
 
         muslArtifacts = craneLibMusl.buildDepsOnly muslArgs;
       in craneLibMusl.buildPackage (muslArgs // {
         cargoArtifacts = muslArtifacts;
-        doCheck = false;
+        doCheck = true;
       });
 
       amaru-debug-tools-win = let
@@ -106,19 +104,17 @@
           ];
         craneLibWindows = (inputs.crane.mkLib pkgs).overrideToolchain windowsToolchain;
         windowsPkgs = pkgs.pkgsCross.mingwW64;
-        # Get pthreads with platform check disabled
         pthreads = windowsPkgs.windows.pthreads.overrideAttrs (old: {
           meta = (old.meta or {}) // { platforms = lib.platforms.all; };
         });
 
-        windowsArgs = {
-          inherit src;
-          strictDeps = true;
-
+        windowsArgs = commonArgs // {
           depsBuildBuild = [
             windowsPkgs.stdenv.cc
             pthreads
           ];
+
+          buildInputs = [];
 
           nativeBuildInputs = with pkgs; [
             pkg-config
@@ -128,8 +124,6 @@
           CARGO_BUILD_TARGET = "x86_64-pc-windows-gnu";
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER = "${windowsPkgs.stdenv.cc}/bin/x86_64-w64-mingw32-gcc";
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS = "-L native=${pthreads}/lib";
-
-          meta = commonArgs.meta;
         };
 
         windowsArtifacts = craneLibWindows.buildDepsOnly windowsArgs;
@@ -137,6 +131,19 @@
         cargoArtifacts = windowsArtifacts;
         doCheck = false;
       });
+    };
+
+    # CI checks - reuse cargoArtifacts for efficiency
+    checks = {
+      clippy = craneLib.cargoClippy (commonArgs // {
+        inherit cargoArtifacts;
+        cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+      });
+
+      fmt = craneLib.cargoFmt {
+        inherit src;
+        inherit (crateInfo) pname version;
+      };
     };
   };
 }
