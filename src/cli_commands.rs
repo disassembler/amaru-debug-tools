@@ -28,7 +28,7 @@ use amaru_network::point::to_network_point;
 
 use crate::cli::{ForkTracerArgs, TracerDiffArgs};
 use crate::cli::{ProtocolVersionArgs, SlotDivergenceArgs};
-use crate::data_types::HeaderInfo;
+use crate::data_types::{HeaderInfo, PeerDivergence};
 
 // --- Core Network Logic (Helper Functions) ---
 
@@ -120,12 +120,8 @@ async fn connect_and_intersect(
 
 fn print_divergence_info(
     last_good: &Option<HeaderInfo>,
-    host_a: &str,
-    diverging_a: &HeaderInfo,
-    block_a_res: &Result<Body>,
-    host_b: &str,
-    diverging_b: &HeaderInfo,
-    block_b_res: &Result<Body>,
+    peer_a: &PeerDivergence,
+    peer_b: &PeerDivergence,
     magic: u64,
 ) {
     if let Some(good) = last_good {
@@ -138,8 +134,8 @@ fn print_divergence_info(
         let last_good_fetch_result = block_on(async {
             // Re-connect specifically for fetching the last good block
             let (mut _chainsync, mut blockfetch) =
-                connect_and_intersect(host_a, magic, good.point.clone()).await?;
-            fetch_block_cbor(&mut blockfetch, good.point.clone(), host_a).await
+                connect_and_intersect(peer_a.host, magic, good.point.clone()).await?;
+            fetch_block_cbor(&mut blockfetch, good.point.clone(), peer_a.host).await
         });
 
         match last_good_fetch_result {
@@ -158,10 +154,10 @@ fn print_divergence_info(
         tracing::error!("#####################################################");
     }
 
-    tracing::error!("\nPEER A DIVERGING BLOCK ({}):", host_a);
-    tracing::error!("  Slot: {}", diverging_a.slot);
-    tracing::error!("  Hash: {}", hex::encode(&diverging_a.hash));
-    match block_a_res {
+    tracing::error!("\nPEER A DIVERGING BLOCK ({}):", peer_a.host);
+    tracing::error!("  Slot: {}", peer_a.header.slot);
+    tracing::error!("  Hash: {}", hex::encode(&peer_a.header.hash));
+    match peer_a.block_result {
         Ok(body) => {
             tracing::error!("  CBOR Hex: {}", hex::encode(body));
             tracing::error!("  CBOR Length: {} bytes", body.len());
@@ -169,10 +165,10 @@ fn print_divergence_info(
         Err(e) => tracing::error!("  Block Fetch Failed: {}", e),
     }
 
-    tracing::error!("\nPEER B DIVERGING BLOCK ({}):", host_b);
-    tracing::error!("  Slot: {}", diverging_b.slot);
-    tracing::error!("  Hash: {}", hex::encode(&diverging_b.hash));
-    match block_b_res {
+    tracing::error!("\nPEER B DIVERGING BLOCK ({}):", peer_b.host);
+    tracing::error!("  Slot: {}", peer_b.header.slot);
+    tracing::error!("  Hash: {}", hex::encode(&peer_b.header.hash));
+    match peer_b.block_result {
         Ok(body) => {
             tracing::error!("  CBOR Hex: {}", hex::encode(body));
             tracing::error!("  CBOR Length: {} bytes", body.len());
@@ -201,7 +197,6 @@ fn print_last_good_info(last_good: &Option<HeaderInfo>) {
 
 /// Main entry point for the slot-divergence command.
 pub async fn run_slot_divergence(args: SlotDivergenceArgs) -> Result<()> {
-
     let start_hash =
         hex::decode(&args.hash).context("Failed to decode start block hash from hex string")?;
     let start_point = Point::Specific(args.slot, start_hash);
@@ -256,12 +251,16 @@ pub async fn run_slot_divergence(args: SlotDivergenceArgs) -> Result<()> {
 
                     print_divergence_info(
                         &last_good_header,
-                        &args.relay_a,
-                        &a,
-                        &block_a_res,
-                        &args.relay_b,
-                        &b,
-                        &block_b_res,
+                        &PeerDivergence {
+                            host: &args.relay_a,
+                            header: &a,
+                            block_result: &block_a_res,
+                        },
+                        &PeerDivergence {
+                            host: &args.relay_b,
+                            header: &b,
+                            block_result: &block_b_res,
+                        },
                         args.magic,
                     );
                     break;
@@ -280,12 +279,16 @@ pub async fn run_slot_divergence(args: SlotDivergenceArgs) -> Result<()> {
 
                     print_divergence_info(
                         &last_good_header,
-                        &args.relay_a,
-                        &a,
-                        &block_a_res,
-                        &args.relay_b,
-                        &b,
-                        &block_b_res,
+                        &PeerDivergence {
+                            host: &args.relay_a,
+                            header: &a,
+                            block_result: &block_a_res,
+                        },
+                        &PeerDivergence {
+                            host: &args.relay_b,
+                            header: &b,
+                            block_result: &block_b_res,
+                        },
                         args.magic,
                     );
                     break;
@@ -413,7 +416,7 @@ pub async fn run_fork_tracer(args: ForkTracerArgs) -> Result<()> {
                         ed25519::PublicKey::try_from(vkey_bytes)
                             .ok()
                             .map(|vkey| issuer_to_pool_id(&vkey))
-                            .map(|pool_id| hex::encode(pool_id)) // <-- Hex encoding happens here
+                            .map(hex::encode)
                     });
 
                 // MODIFIED: Update count in the HashMap instead of inserting into a HashSet
@@ -583,7 +586,7 @@ pub async fn run_transaction_tracer(args: ForkTracerArgs) -> Result<()> {
                         ed25519::PublicKey::try_from(vkey_bytes)
                             .ok()
                             .map(|vkey| issuer_to_pool_id(&vkey))
-                            .map(|pool_id| hex::encode(pool_id)) // <-- Hex encoding happens here
+                            .map(hex::encode)
                     });
 
                 if let Some(ref hex_string) = pool_id_hex_option {
@@ -599,10 +602,7 @@ pub async fn run_transaction_tracer(args: ForkTracerArgs) -> Result<()> {
 
                 dump_writer.append(
                     "tx-ids",
-                    txs.iter()
-                        .map(|tx_id| hex::encode(tx_id))
-                        .collect::<Vec<_>>()
-                        .join("\n"),
+                    txs.iter().map(hex::encode).collect::<Vec<_>>().join("\n"),
                 );
 
                 if args.dump_blocks {

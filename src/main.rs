@@ -1,9 +1,9 @@
 use anyhow::Result;
 use tracing_subscriber::filter::LevelFilter;
 
-mod data_types;
 mod cli;
 mod cli_commands;
+mod data_types;
 
 #[tokio::main]
 async fn main() -> Result<()> {
