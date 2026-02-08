@@ -129,9 +129,6 @@
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER = "${windowsPkgs.stdenv.cc}/bin/x86_64-w64-mingw32-gcc";
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS = "-L native=${pthreads}/lib";
 
-          # Windows doesn't use openssl from nixpkgs - use vendored
-          OPENSSL_NO_VENDOR = "0";
-
           meta = commonArgs.meta;
         };
 
