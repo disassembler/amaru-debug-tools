@@ -2,14 +2,11 @@
   description = "Tools for debugging amaru node";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    naersk.url = "github:nix-community/naersk";
-    naersk.inputs.nixpkgs.follows = "nixpkgs";
+    crane.url = "github:ipetkov/crane";
     fenix.url = "github:nix-community/fenix";
     fenix.inputs.nixpkgs.follows = "nixpkgs";
-    rust-overlay.url = "github:oxalica/rust-overlay";
-    rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = inputs:
@@ -21,15 +18,15 @@
         "aarch64-darwin"
       ];
 
-       perSystem = { config, self, pkgs, system, ... }: {
+      perSystem = { system, ... }: {
         _module.args.pkgs = import inputs.nixpkgs {
           inherit system;
-          overlays = [ inputs.rust-overlay.overlays.default ];
         };
       };
 
       imports = [
         nix/devShells.nix
+        nix/packages.nix
       ];
     };
 }
